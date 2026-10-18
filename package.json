@@ -16,7 +16,8 @@
     "wipe": "node dist/db/wipe.js",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.board.json",
-    "secret": "node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\""
+    "secret": "node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
+    "package:skill": "mkdir -p dist && rm -f dist/daily-prioritizer.zip && cd skill && zip -rq ../dist/daily-prioritizer.zip daily-prioritizer -x \"*.DS_Store\" && echo dist/daily-prioritizer.zip"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.7.5",
