@@ -45,7 +45,7 @@ Send these to Nimesh's main Gmail. The **Tests** column is what the dry run shou
 | 13 | B (Priya) | Re: Q4 roadmap review | reply in **#1's thread**: "Thanks! Looking forward to it." | non-ask later message → update only, due date kept |
 | 14 | A (Arjun) | Conference talk | "The organisers want your talk title and abstract by Thursday." | external-facing deadline |
 | 15 | B | Your Notion trial is ending | product notification | notification → excluded |
-| 16 | A (Arjun) | Team offsite | "Can you pick a venue from the shortlist? Sana could also do it if you're slammed." | **delegable** → "could delegate" hint |
+| 16 | A (Arjun) | Team offsite | "Can you pick a venue from the shortlist? Sana could also do it if you're slammed." | **delegable** → "could delegate" hint if it lands in Do |
 | 17 | B (Priya) | Data access | "Our IT team needs the list of IP ranges to allowlist. Can your team send it?" | client ask, delegable to team |
 | 18 | A (Arjun) | Quick question | "Are we still on for Tuesday's investor call prep?" | links to the calendar event below (cross-source) |
 | 19 | A (Dev Kapoor sig) | Re: Northwind proposal: pricing question | reply in **#3's thread**, sent ~1 h after #3: "Also, our legal team asks for your standard MSA." | later message → converted or separate (judgment) |
