@@ -1,0 +1,31 @@
+{
+  "_note": "Redacted samples recorded in Unit 0 (Gmail, Calendar, Granola on Nimesh's account) and at the start of Jeevan's session (Slack). Replace personal values with X but keep the shape: length, prefixes, separators. These drive the lenient format checks and the skill's identifier examples.",
+  "gmail": {
+    "tool_used": "TODO e.g. search_threads / get_thread",
+    "message_id": "TODO",
+    "thread_id": "TODO",
+    "message_url": "TODO e.g. https://mail.google.com/mail/u/0/#inbox/<id>",
+    "search_syntax_passthrough": "TODO: does after:<epoch> before:<epoch> work? yes/no"
+  },
+  "gcal": {
+    "tool_used": "TODO",
+    "single_event_id": "TODO",
+    "recurring_instance_id": "TODO (one instance of a recurring series)",
+    "recurring_series_id": "TODO (the series id, if returned)",
+    "event_url": "TODO e.g. https://www.google.com/calendar/event?eid=..."
+  },
+  "granola": {
+    "tool_used": "TODO",
+    "meeting_id": "TODO",
+    "meeting_url": "TODO or null if the connector returns none",
+    "action_items_shape": "TODO: list? numbered? where in the note?",
+    "date_range_filter": "TODO: can it list meetings by date range? yes/no"
+  },
+  "slack": {
+    "tool_used": "TODO (Jeevan's session)",
+    "channel_id": "TODO",
+    "message_ts": "TODO",
+    "thread_ts": "TODO",
+    "permalink": "TODO e.g. https://<workspace>.slack.com/archives/<channel>/p<ts>"
+  }
+}
