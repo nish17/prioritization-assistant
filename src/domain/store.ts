@@ -52,6 +52,8 @@ export interface Card {
 }
 
 export interface Board {
+  /** Supersession key: minted per list_tasks call; the board keeps the one from its mount-time result. */
+  election: { createdAt: number; seq: number };
   generated_at: string;
   rules_version: string;
   timezone: string;
@@ -63,6 +65,7 @@ export interface Board {
 }
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
+let boardSeq = 0;
 
 export class Store {
   constructor(private readonly o: StoreOptions) {}
@@ -304,6 +307,7 @@ export class Store {
 
     const view = await syncStateView(db, userId, now, this.windows);
     const board: Board = {
+      election: { createdAt: now.getTime(), seq: ++boardSeq },
       generated_at: now.toISOString(),
       rules_version: DEFAULT_SCORING.rules_version,
       timezone: this.o.timezone,

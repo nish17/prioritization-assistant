@@ -1,35 +1,53 @@
-// Unit 0 platform-check stub. Replaced by the real board in Unit 5.
-import { App } from "@modelcontextprotocol/ext-apps";
+import { App, applyDocumentTheme, applyHostFonts, applyHostStyleVariables, type McpUiHostContext } from "@modelcontextprotocol/ext-apps";
+import "./styles.css";
+import { createBoard } from "./controller.js";
 
 const root = document.getElementById("root")!;
-const line = (text: string) => {
-  const p = document.createElement("p");
-  p.textContent = text;
-  root.append(p);
-  document.documentElement.style.height = `${document.body.scrollHeight}px`;
-};
-const button = (label: string, onClick: () => Promise<unknown>) => {
-  const b = document.createElement("button");
-  b.textContent = label;
-  b.onclick = () => {
-    onClick().then(
-      (r) => line(`${label}: ok ${JSON.stringify(r).slice(0, 200)}`),
-      (e) => line(`${label}: error ${String(e).slice(0, 200)}`),
-    );
-  };
-  root.append(b);
-};
+const app = new App({ name: "Prioritizer board", version: "1.0.0" }, {}, { autoResize: true });
+let instanceId: string = crypto.randomUUID();
 
-const app = new App({ name: "Prioritizer board (stub)", version: "0.0.1" });
-app.ontoolresult = (result) => line(`tool result: ${JSON.stringify(result.structuredContent ?? null).slice(0, 200)}`);
+const board = createBoard(root, app, {
+  // Claude sizes inline apps from the document, so set the height explicitly after every render (never 100vh).
+  onPainted: (s) => {
+    requestAnimationFrame(() => {
+      document.documentElement.style.height = s.mode === "fullscreen" ? "" : `${document.body.scrollHeight}px`;
+    });
+  },
+});
 
-line("Board stub loaded.");
-button("callServerTool", () => app.callServerTool({ name: "list_tasks", arguments: {} }));
-button("sendMessage", () => app.sendMessage({ role: "user", content: [{ type: "text", text: "Board stub test: reply with OK." }] }));
-button("fullscreen", () => app.requestDisplayMode({ mode: "fullscreen" }));
-button("inline", () => app.requestDisplayMode({ mode: "inline" }));
-button("openLink", () => app.openLink({ url: "https://mail.google.com/" }));
+function applyContext(ctx: McpUiHostContext | undefined) {
+  if (!ctx) return;
+  if (ctx.theme) applyDocumentTheme(ctx.theme);
+  if (ctx.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
+  if (ctx.styles?.css?.fonts) applyHostFonts(ctx.styles.css.fonts);
+  board.onHostContext(ctx);
+}
 
+// Register handlers before connecting so the mount-time result isn't missed.
+app.ontoolresult = (result) => board.onToolResult(result, instanceId);
+app.onhostcontextchanged = (ctx) => applyContext(ctx);
+
+try {
+  const channel = new BroadcastChannel("prioritizer-board-supersede-v1");
+  board.attachChannel(channel as unknown as Parameters<typeof board.attachChannel>[0]);
+} catch {
+  // No BroadcastChannel: every instance stays live and shows its "as of" time.
+}
+
+board.paint();
 await app.connect();
 const ctx = app.getHostContext();
-line(`host: ${JSON.stringify(app.getHostVersion() ?? null)} displayMode=${ctx?.displayMode} available=${JSON.stringify(ctx?.availableDisplayModes ?? null)}`);
+if (ctx?.toolInfo?.id !== undefined) instanceId = String(ctx.toolInfo.id);
+board.state.canFullscreen = ctx?.availableDisplayModes ? ctx.availableDisplayModes.includes("fullscreen") : true;
+applyContext(ctx);
+
+let lastFetch = 0;
+const refetchOnReturn = () => {
+  if (!board.state.board || board.state.superseded || Date.now() - lastFetch < 3000) return;
+  lastFetch = Date.now();
+  void board.refetch();
+};
+window.addEventListener("focus", refetchOnReturn);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refetchOnReturn();
+});
