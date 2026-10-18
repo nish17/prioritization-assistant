@@ -95,6 +95,17 @@ describe("Step 2: thread-level", () => {
     expect(r.linked_to).toEqual([x.task_id]);
   });
 
+  it("moves a converted item off a task that is now done", async () => {
+    const x = await store.upsertTask(newTask("Send Q4 deck", [gmail("m1", "T")]));
+    const m2 = gmail("m2", "T", { occurred_at: "2026-10-17T12:00:00Z" });
+    await store.upsertTask(newTask("Check references", [m2]));
+    await store.updateStatus({ task_id: x.task_id, status: "done" });
+    const r = await store.upsertTask(newTask("Check references", [m2], { separate_task: true }));
+    expect(r.outcome).toBe("moved");
+    expect(r.status).toBe("open");
+    expect(await sourcesOf(x.task_id)).toEqual(["m1:origin"]);
+  });
+
   it("never lets separate_task override an item written as an origin", async () => {
     const x = await store.upsertTask(newTask("Send Q4 deck", [gmail("m1", "T")]));
     const r = await store.upsertTask(newTask("Send Q4 deck", [gmail("m1", "T")], { separate_task: true }));
@@ -109,6 +120,7 @@ describe("Step 1: item-level", () => {
     const first = await run();
     await store.upsertTask(newTask("Ask one", [gmail("m1", "T", { ask_index: 1 })], { run_id: first }));
     const second = await store.upsertTask(newTask("Ask two", [gmail("m1", "T", { ask_index: 2 })], { run_id: first }));
+    await store.finishRun(first, "ok", { fetched: 1, evaluated: 1, not_a_task: 0 });
     const later = (await store.startRun("refresh", "gmail")) as { status: string };
     expect(later.status).toBe("backfill_incomplete");
     const nextRun = (await store.startRun("backfill", "gmail")) as { run_id: string };
@@ -122,12 +134,50 @@ describe("Step 1: item-level", () => {
   it("skips a drifted re-read when all of the item's tasks are done", async () => {
     const first = await run();
     const a = await store.upsertTask(newTask("Ask one", [gmail("m1", "T", { ask_index: 1 })], { run_id: first }));
+    await store.finishRun(first, "ok", { fetched: 1, evaluated: 1, not_a_task: 0 });
     await store.updateStatus({ task_id: a.task_id, status: "done" });
     const r = await store.upsertTask(newTask("Ask one again", [gmail("m1", "T", { ask_index: 2 })]));
     expect(r.outcome).toBe("skipped-done");
     expect(r.skipped).toBe(true);
     expect(r.status).toBe("done");
     expect(await taskCount()).toBe(1);
+  });
+
+  it("never re-creates an item that was absorbed as evidence onto a done task", async () => {
+    const x = await store.upsertTask(newTask("Send deck", [gmail("m1", "T")]));
+    await store.updateStatus({ task_id: x.task_id, status: "done" });
+    await store.upsertTask(updateTask(x.task_id, [gmail("m2", "T", { role: "update" })]));
+    const r = await store.upsertTask(newTask("Thanks note", [gmail("m2", "T", { occurred_at: "2026-10-17T12:00:00Z" })]));
+    expect(r).toMatchObject({ task_id: x.task_id, outcome: "skipped-done", skipped: true });
+    expect(await taskCount()).toBe(1);
+  });
+
+  it("updates, rather than duplicates, the task an evidence item is attached to", async () => {
+    const x = await store.upsertTask(newTask("Send deck", [gmail("m1", "T1"), gmail("d1", "T9", { role: "evidence" })]));
+    const r = await store.upsertTask(newTask("Deck follow-up", [gmail("d1", "T9", { occurred_at: "2026-10-17T12:00:00Z" })]));
+    expect(r).toMatchObject({ task_id: x.task_id, outcome: "updated" });
+    expect(await taskCount()).toBe(1);
+  });
+
+  it("creates sibling asks written without a run in one burst, and converts them later", async () => {
+    await store.upsertTask(newTask("Ask one", [gmail("m1", "T", { ask_index: 1 })]));
+    const b = await store.upsertTask(newTask("Ask two", [gmail("m1", "T", { ask_index: 2 })]));
+    expect(b.outcome).toBe("created");
+    clock.now = new Date(clock.now.getTime() + 60 * 60_000);
+    const c = await store.upsertTask(newTask("Ask three", [gmail("m1", "T", { ask_index: 3 })]));
+    expect(c.outcome).toBe("converted");
+    expect(await taskCount()).toBe(2);
+  });
+
+  it("still creates the missing asks when the first run never finished cleanly", async () => {
+    const first = await run();
+    await store.upsertTask(newTask("Ask one", [gmail("m1", "T", { ask_index: 1 })], { run_id: first }));
+    await store.finishRun(first, "partial", { fetched: 1, evaluated: 1, not_a_task: 0 }, "chat ended");
+    const retry = await run();
+    expect((await store.upsertTask(newTask("Ask one", [gmail("m1", "T", { ask_index: 1 })], { run_id: retry }))).outcome).toBe("updated");
+    const b = await store.upsertTask(newTask("Ask two", [gmail("m1", "T", { ask_index: 2 })], { run_id: retry }));
+    expect(b.outcome).toBe("created");
+    expect(await taskCount()).toBe(2);
   });
 
   it("skips a re-read of an item whose task is done", async () => {

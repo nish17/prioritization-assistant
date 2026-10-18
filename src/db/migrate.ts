@@ -27,15 +27,19 @@ export async function migrate(pool: Pool): Promise<string[]> {
         await client.query("INSERT INTO schema_migrations (name) VALUES ($1)", [file]);
         await client.query("COMMIT");
       } catch (err) {
-        await client.query("ROLLBACK");
+        await client.query("ROLLBACK").catch(() => {});
         throw err;
       }
       applied.push(file);
     }
     return applied;
   } finally {
-    await client.query("SELECT pg_advisory_unlock($1)", [MIGRATION_LOCK]).catch(() => {});
-    client.release();
+    // The lock is session-level: if unlocking fails, destroy the connection so the lock can't leak into the pool.
+    const unlocked = await client.query("SELECT pg_advisory_unlock($1)", [MIGRATION_LOCK]).then(
+      () => true,
+      () => false,
+    );
+    client.release(!unlocked);
   }
 }
 

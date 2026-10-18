@@ -31,7 +31,7 @@ Load the references when you need them:
 1. Ask for about 10 key people: name, email address(es), Slack handle if any, and relationship: **client, co-founder, prospect, team, investor or other**. Accept free text.
 2. Echo them back as a table (name, relationship, emails, Slack) and ask the user to confirm or correct.
 3. Ask for 5–10 items the user knows are open right now, in a few words each. These are used later to check coverage.
-4. Call `update_settings` once with `people` and `known_open_items`. (It replaces the whole document, so include everything.)
+4. Call `update_settings` once with `people` and `known_open_items`. (It replaces the whole document, so include everything.) If it returns `warnings` about unknown relationship terms, ask the user which listed term fits and save again.
 5. Tell the user: "Start a new chat and say **continue backfill**. Each chat processes one slice of one source."
 
 ### continue-backfill ("continue backfill")
@@ -52,7 +52,7 @@ Read-only: never draft or send.
 1. `get_sync_state`. Keep `open_thread_keys` for the resolution pass.
 2. For each source whose connector is available (only the sources the user named, if they named any), in the order gmail, slack, granola, gcal:
    1. `start_run(mode: "refresh", source)`. If it returns `backfill_incomplete`, skip the source and mention it in the summary.
-   2. Query with the `query_hints`, process items with the per-item procedure, then `finish_run`.
+   2. Query with the `query_hints`, process items with the per-item procedure, then `finish_run`. If `finish_run` returns `caught_up: false`, run this source's refresh again (`start_run` → process → `finish_run`), at most 3 times in this chat.
    3. **Resolution pass** (gmail and slack only): run one search for the user's own messages since the window start (`own_replies_since_window_start` hint). Keep only results whose thread is in `open_thread_keys` for that source. For each match, read the thread. If the user's own reply clearly resolves the task, look up the task with `find_related(thread_keys: [...])`, call `upsert_task(decision: "update", task_id, sources: [the reply with role "resolution"])`, then `update_status(task_id, "done", note: "Resolved by your reply on <date>")`. If it is unclear, list it as **possibly resolved** in the summary and change nothing.
 3. Call `list_tasks` to show the board.
 4. Summarize per source: created, updated, converted, skipped (done), not-a-task, possibly resolved, and any skipped sources.
@@ -65,6 +65,14 @@ Read-only: never draft or send.
 4. Send only after an explicit yes ("yes", "send it"). If the connector can only create drafts, create the draft and tell the user it is waiting in their drafts.
 5. Then `update_status`: `waiting_on_others` if you asked something or handed it over, or `done` if the reply completes the task. Add a short `note`.
 6. For "schedule this": propose the event (title, time, attendees) and create it only on a yes.
+
+### status changes from chat ("snooze this until Friday", "Sana is handling it", "I'm waiting on Priya")
+
+`update_status` with `snoozed` (and `snooze_until` as an ISO time with time zone; pick 09:00 local for a bare day), `delegated` (with `delegated_to`), `waiting_on_others`, `done`, or `open`. Confirm the task title first if the user's reference is ambiguous.
+
+### redo a backfill ("redo the gmail backfill", "start that source over")
+
+Only at the user's request. Explain that `reset_backfill` puts the source back to its first slice and, with `delete_tasks: true`, also deletes the tasks that source's backfill created (tasks that also gained sources from other tools keep those). Ask whether to delete the tasks, then call it; Claude's approval prompt will appear because the tool is destructive. Then: "start a new chat and say continue backfill".
 
 ### review ("why is this in Do?", "explain task <id>", "show my board")
 
@@ -83,7 +91,8 @@ For each candidate item (an email thread, a Slack message or thread, a meeting, 
 5. `upsert_task` with `decision: "new"`, the `run_id`, exactly **one** `origin` source (the item that states the ask), and any context as `evidence` sources. Use `decision: "update"` with a `task_id` only when you are sure the item belongs to that task (for example, a Slack follow-up about a task found by `find_related`). Send `link_to` for a clearly related task in another thread.
 6. Read the outcome:
    - `created`, `updated`: fine.
-   - `converted`: the server merged this item into an existing task in the same thread and returns `matched_title`. If the new item is a **genuinely different ask**, re-send the same call with `separate_task: true`. If it is the same ask, nothing more to do.
+   - **Any result with `converted: true`** (outcome `converted`, or `reopened` with `converted: true`): the server merged this item into an existing task in the same thread and returns `matched_title` (and `existing_asks` for a re-read item). If the new item is a **genuinely different ask**, re-send the same call with `separate_task: true` (outcome `moved` when the item is moved onto its own task). If it is the same ask, nothing more to do.
    - `skipped-done`: the item is already on a done task. Note it in the summary.
    - `reopened`: a waiting or snoozed task came back because of a newer ask. Mention it.
+   - `evidence`: the item was attached as context only (the task is done, or you sent no origin/update source). Fine.
    - A validation error names the field: fix it and retry once.

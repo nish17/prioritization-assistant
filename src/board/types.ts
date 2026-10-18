@@ -61,5 +61,20 @@ export interface TaskDetails {
 
 export function isBoard(x: unknown): x is Board {
   const b = x as Board | null;
-  return !!b && typeof b === "object" && !!b.quadrants && QUADRANTS.every((q) => Array.isArray(b.quadrants[q]?.cards)) && !!b.header;
+  return (
+    !!b &&
+    typeof b === "object" &&
+    !!b.quadrants &&
+    QUADRANTS.every((q) => Array.isArray(b.quadrants[q]?.cards) && typeof b.quadrants[q]?.total === "number") &&
+    !!b.header &&
+    Array.isArray(b.header.sources) &&
+    typeof b.header.counts === "object" &&
+    b.header.counts !== null &&
+    typeof b.timezone === "string"
+  );
+}
+
+export function isTaskDetails(x: unknown): x is TaskDetails {
+  const d = x as TaskDetails | null;
+  return !!d && typeof d === "object" && !!d.task && Array.isArray(d.task.rules_fired) && Array.isArray(d.sources);
 }

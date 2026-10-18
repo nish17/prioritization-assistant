@@ -35,7 +35,8 @@ export function registerBoard(server: McpServer, store: () => Store): void {
       description:
         "Returns the prioritized board: open tasks in the four Eisenhower quadrants (do, schedule, delegate, defer), ordered within each, " +
         "with reasons, requester, up to 3 source chips, per-source freshness, and counts of waiting, delegated and snoozed tasks. " +
-        "Renders as an interactive board where supported; the text lists each quadrant's top items with task ids.",
+        "Renders as an interactive board where supported; the text lists each quadrant's top items with task ids. " +
+        "With quadrant set, only that quadrant's cards are returned (up to 50); the others carry totals only.",
       inputSchema: listTasksShape,
       annotations: READ_ONLY,
       _meta: { ui: { resourceUri: uri } },

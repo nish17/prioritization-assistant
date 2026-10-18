@@ -50,7 +50,7 @@ function allowedHost(url: URL): boolean {
   if (h === "mail.google.com" || h === "calendar.google.com") return true;
   if (h === "www.google.com") return url.pathname.startsWith("/calendar/");
   if (h === "slack.com" || h.endsWith(".slack.com")) return true;
-  // Granola: confirmed from the Unit 0 sample; both the current and the earlier domain.
+  // Granola: both the current and the earlier domain (check against tests/fixtures/connector-samples.json).
   for (const d of ["granola.ai", "granola.so"]) if (h === d || h.endsWith(`.${d}`)) return true;
   return false;
 }
@@ -68,8 +68,4 @@ export function cleanUrl(input: string | null | undefined): { url: string | null
     // not a URL
   }
   return { url: null, url_text: cleanText(trimmed, LIMITS.urlText) };
-}
-
-export function isAllowedLink(input: string): boolean {
-  return cleanUrl(input).url !== null;
 }

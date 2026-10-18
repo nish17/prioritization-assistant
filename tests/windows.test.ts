@@ -130,6 +130,15 @@ describe("refresh and calendar windows", () => {
     const chunk = await start("refresh");
     expect(chunk.window_from).toBe(r.window_from);
     expect(new Date(chunk.window_to).getTime() - new Date(chunk.window_from).getTime()).toBe(24 * 3_600_000);
+    const partway = await store.finishRun(chunk.run_id, "ok", okCounts);
+    expect(partway.caught_up).toBe(false);
+    // Each chunk re-reads the hour before the cursor, so catching up takes a couple more runs.
+    let last: Started | undefined;
+    for (let i = 0; i < 3; i++) {
+      last = await start("refresh");
+      if ((await store.finishRun(last.run_id, "ok", okCounts)).caught_up) break;
+    }
+    expect(last!.window_to).toBe(clock.now.toISOString());
   });
 
   it("always reads Calendar from now to now + 7 days", async () => {

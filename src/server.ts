@@ -58,8 +58,8 @@ export function createApp(opts: AppOptions): express.Express {
     const server = opts.makeServer();
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on("close", () => {
-      void transport.close();
-      void server.close();
+      transport.close().catch((err) => logError("transport_close", err));
+      server.close().catch((err) => logError("server_close", err));
     });
     try {
       await server.connect(transport);
@@ -78,6 +78,12 @@ export function createApp(opts: AppOptions): express.Express {
   app.use(notFound);
 
   const onError: ErrorRequestHandler = (err, _req, res, _next) => {
+    // Before the secret check passes (e.g. a malformed percent-encoded path), every failure looks like any other
+    // unknown route: a bare 404.
+    if (res.locals.route !== "mcp" && !res.headersSent) {
+      res.status(404).end();
+      return;
+    }
     const status = typeof err?.status === "number" && err.status >= 400 && err.status < 500 ? err.status : 500;
     logError("http_error", err, { status });
     if (res.headersSent) {
@@ -104,11 +110,21 @@ async function main(): Promise<void> {
     }
     log("listening", { port: config.port, authMode: config.authMode });
   });
+  let shuttingDown = false;
   const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    // Let in-flight tool calls finish, but never hang a redeploy: force exit after 10 s.
+    setTimeout(() => process.exit(0), 10_000).unref();
+    httpServer.closeIdleConnections();
     httpServer.close(() => {
-      void deps.close().finally(() => process.exit(0));
+      deps
+        .close()
+        .catch((err) => logError("pool_close", err))
+        .finally(() => process.exit(0));
     });
   };
+  process.on("unhandledRejection", (err) => logError("unhandled_rejection", err));
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
 }

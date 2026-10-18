@@ -16,6 +16,7 @@ import { TASK_COLUMNS, type TaskRow } from "./taskRow.js";
 // Step 2 (thread): a new item in a thread that has an open task → sibling ask (same external_id) creates a
 //                  linked task; a later message converts into the most recently active match.
 // separate_task skips Step 2 and the drift rule, and moves an item that was attached only by a conversion.
+// A re-read of any stored item (origin, update, evidence or resolution) never creates a task.
 
 export type Outcome = "created" | "updated" | "converted" | "skipped-done" | "evidence" | "reopened" | "moved";
 
@@ -75,6 +76,7 @@ interface PreparedFields {
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const NO_RUN_BURST_MS = 30 * 60_000;
 const LOOKS_LIKE_URL = /^[a-z][a-z0-9+.-]*:\/\/|^www\./i;
 const SLACK_KEY = /^[^\s:]+:[^\s:]+$/;
 
@@ -205,7 +207,7 @@ async function resolveEntities(c: Client, userId: string, taskId: string, input:
     const email = e.email?.trim().toLowerCase() || null;
     let id: string | undefined;
     if (email && e.type === "person") {
-      id = (await c.query<{ id: string }>("SELECT id FROM entities WHERE user_id = $1 AND type = 'person' AND $2 = ANY(emails) LIMIT 1", [userId, email])).rows[0]?.id;
+      id = (await c.query<{ id: string }>("SELECT id FROM entities WHERE user_id = $1 AND type = 'person' AND emails @> ARRAY[$2]::text[] LIMIT 1", [userId, email])).rows[0]?.id;
     }
     if (!id) {
       id = (
@@ -401,25 +403,27 @@ export async function upsertTask(c: Client, input: UpsertTaskInput, ctx: UpsertC
     return finish(reopened ? "reopened" : outcome, taskId, outcome === "converted" ? { converted: true, matched_title: task.title, ...extra } : extra);
   };
 
-  // Step 1: this exact item is already stored as an origin or update (any status).
+  // Step 1: this exact item is already stored on a task, in any role and any status. Matching evidence and
+  // resolution rows too means an item absorbed as context (or onto a done task) is never re-created on a re-read.
   const exact = (
     await c.query<{ row_id: string; task_id: string; via_conversion: boolean; status: TaskStatus }>(
       `SELECT ts.id AS row_id, ts.task_id, ts.via_conversion, t.status
        FROM task_sources ts JOIN tasks t ON t.id = ts.task_id
-       WHERE t.user_id = $1 AND ts.source = $2 AND ts.item_key = $3 AND ts.role IN ('origin','update')
-       ORDER BY (t.status = 'done'), t.last_activity_at DESC`,
+       WHERE t.user_id = $1 AND ts.source = $2 AND ts.item_key = $3
+       ORDER BY (t.status = 'done'), (ts.role IN ('origin','update')) DESC, t.last_activity_at DESC`,
       [ctx.userId, p.source, p.item_key],
     )
   ).rows;
   if (exact.length) {
-    const open = exact.find((r) => r.status !== "done");
-    if (open && input.separate_task && open.via_conversion) {
-      // The item reached that task only through a conversion: move it onto its own task.
-      await c.query("DELETE FROM task_sources WHERE id = $1", [open.row_id]);
-      await event(c, open.task_id, "moved_out");
-      const { taskId, linked } = await createTask(c, ctx, input, f, p, others, runId, [open.task_id]);
+    const converted = input.separate_task ? exact.find((r) => r.via_conversion) : undefined;
+    if (converted) {
+      // The item reached that task only through a conversion: move it onto its own task (even if that task is done).
+      await c.query("DELETE FROM task_sources WHERE id = $1", [converted.row_id]);
+      await event(c, converted.task_id, "moved_out");
+      const { taskId, linked } = await createTask(c, ctx, input, f, p, others, runId, [converted.task_id]);
       return finish("moved", taskId, { linked_to: linked });
     }
+    const open = exact.find((r) => r.status !== "done");
     if (open) return convertInto(open.task_id, "updated", false);
     // Already on a done task: nothing changes, and a done task never reopens from a re-read.
     return finish("skipped-done", exact[0]!.task_id, { skipped: true });
@@ -436,13 +440,21 @@ export async function upsertTask(c: Client, input: UpsertTaskInput, ctx: UpsertC
     )
   ).rows;
   if (known.length && !input.separate_task) {
-    const firstRun = (
-      await c.query<{ run_id: string | null }>(
-        "SELECT run_id FROM ingest_outcomes WHERE user_id = $1 AND source = $2 AND external_id = $3 ORDER BY id LIMIT 1",
+    const first = (
+      await c.query<{ run_id: string | null; run_status: string | null; created_at: Date }>(
+        `SELECT o.run_id, r.status AS run_status, o.created_at
+         FROM ingest_outcomes o LEFT JOIN ingest_runs r ON r.id = o.run_id
+         WHERE o.user_id = $1 AND o.source = $2 AND o.external_id = $3 ORDER BY o.id LIMIT 1`,
         [ctx.userId, p.source, p.external_id],
       )
-    ).rows[0]?.run_id;
-    const sameRun = !!runId && firstRun === runId;
+    ).rows[0];
+    // New sibling asks are allowed while the item is still being read for the first time: in the same run, after a
+    // first run that never finished cleanly (its asks may be incomplete), or in a burst of writes made without a run.
+    const sameRun =
+      !!first &&
+      ((!!runId && first.run_id === runId) ||
+        (first.run_id !== null && first.run_status !== "ok") ||
+        (!runId && first.run_id === null && ctx.now.getTime() - first.created_at.getTime() < NO_RUN_BURST_MS));
     if (!sameRun) {
       const existing_asks = known.map((k) => ({ ask_index: k.ask_index, task_id: k.task_id, title: k.title, status: k.status }));
       const open = known.find((k) => k.status !== "done");

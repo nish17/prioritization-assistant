@@ -73,6 +73,13 @@ export function normalizeSettings(input: SettingsInput): Settings {
   };
 }
 
+/** People whose relationship isn't one of the known terms and who have no explicit tier: they fall to "other". */
+export function unmappedRelationships(input: SettingsInput): string[] {
+  return input.people
+    .filter((p) => !p.tier && !RELATIONSHIP_TIERS[p.relationship.trim().toLowerCase()])
+    .map((p) => `${p.name}: relationship "${p.relationship}" is not a known term, so they are weighed as "other" (use client, co-founder, prospect, team, investor or other, or give a tier)`);
+}
+
 export async function getSettings(db: Pool | Client, userId: string): Promise<Settings> {
   const { rows } = await db.query("SELECT people, known_open_items FROM user_settings WHERE user_id = $1", [userId]);
   return { people: rows[0]?.people ?? [], known_open_items: rows[0]?.known_open_items ?? [] };

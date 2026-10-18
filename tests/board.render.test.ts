@@ -222,6 +222,89 @@ describe("actions", () => {
   });
 });
 
+describe("races", () => {
+  const deferred = <T,>() => {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => (resolve = r));
+    return { promise, resolve };
+  };
+
+  it("keeps a done card hidden when a refetch issued before the Done returns it", async () => {
+    const host = fakeHost();
+    const stale = deferred<unknown>();
+    const calls: string[] = [];
+    host.callServerTool.mockImplementation(async ({ name }: { name: string }) => {
+      calls.push(name);
+      if (name === "list_tasks" && calls.filter((n) => n === "list_tasks").length === 1) return stale.promise;
+      if (name === "update_status") return { structuredContent: { ok: true } };
+      return result(board({}));
+    });
+    const b = createBoard(root, host);
+    b.onToolResult(result(board({ do: [card("a")] })), "i1");
+    const focusFetch = b.refetch(); // e.g. window focus, before the Done
+    buttonIn("a", "Done").click();
+    await flush();
+    stale.resolve(result(board({ do: [card("a")] }))); // the stale payload still has the card
+    await focusFetch;
+    await flush();
+    expect(root.querySelector('[data-task-id="a"]')).toBeNull();
+    await flush();
+    expect(calls).toEqual(["list_tasks", "update_status", "list_tasks"]);
+    expect(root.querySelector('[data-task-id="a"]')).toBeNull();
+  });
+
+  it("keeps a done card hidden when the refetch after it fails", async () => {
+    const host = fakeHost();
+    host.callServerTool.mockImplementation(async ({ name }: { name: string }) =>
+      name === "update_status" ? { structuredContent: { ok: true } } : { isError: true, content: [{ type: "text", text: "boom" }] },
+    );
+    const b = createBoard(root, host);
+    b.onToolResult(result(board({ do: [card("a")] })), "i1");
+    buttonIn("a", "Done").click();
+    await flush();
+    await flush();
+    expect(root.querySelector('[data-task-id="a"]')).toBeNull();
+    expect(root.querySelector(".inline-error")).not.toBeNull();
+  });
+
+  it("drops a late details response after the details were closed", async () => {
+    const host = fakeHost();
+    const late = deferred<unknown>();
+    host.callServerTool.mockImplementation(async () => late.promise);
+    const b = createBoard(root, host);
+    b.onToolResult(result(board({ do: [card("a")] })), "i1");
+    buttonIn("a", "Details").click();
+    buttonIn("a", "Hide details").click();
+    late.resolve({ structuredContent: { task: { id: "a", summary: "x", status_note: null, rules_fired: [] }, sources: [] } });
+    await flush();
+    expect(root.querySelector(".details")).toBeNull();
+    expect(b.state.details.has("a")).toBe(false);
+  });
+
+  it("sends one message for a double-clicked Act", async () => {
+    const host = fakeHost();
+    const slow = deferred<{ isError?: boolean }>();
+    host.sendMessage.mockImplementation(async () => slow.promise);
+    const b = createBoard(root, host);
+    b.onToolResult(result(board({ do: [card("a")] })), "i1");
+    b.handlers.act("a");
+    b.handlers.act("a");
+    expect(buttonIn("a", "Act").disabled).toBe(true);
+    slow.resolve({});
+    await flush();
+    expect(host.sendMessage).toHaveBeenCalledTimes(1);
+    expect(buttonIn("a", "Act").disabled).toBe(false);
+  });
+
+  it("keeps keyboard focus on the same control across repaints", async () => {
+    const b = createBoard(root, fakeHost());
+    b.onToolResult(result(board({ do: [card("a"), card("b")] })), "i1");
+    buttonIn("b", "Details").focus();
+    b.paint();
+    expect(document.activeElement).toBe(buttonIn("b", "Details"));
+  });
+});
+
 describe("supersession", () => {
   function pairChannel() {
     const sent: unknown[] = [];
@@ -242,6 +325,9 @@ describe("supersession", () => {
     ch.onmessage!({ data: { type: "hello", createdAt: 1000, seq: 4, instanceId: "older" } });
     expect(b.state.superseded).toBe(false);
     expect(sent.at(-1)).toMatchObject({ type: "born", createdAt: 1000, seq: 5 });
+
+    ch.onmessage!({ data: { type: "hello", createdAt: 1000, seq: 5, instanceId: "zzz-same-result" } });
+    expect(b.state.superseded).toBe(false);
 
     ch.onmessage!({ data: { type: "hello", createdAt: 2000, seq: 6, instanceId: "new" } });
     expect(b.state.superseded).toBe(true);

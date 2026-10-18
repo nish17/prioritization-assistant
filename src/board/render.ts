@@ -26,6 +26,8 @@ export interface ViewState {
   notices: Map<string, string>;
   details: Map<string, DetailsState>;
   expandedQuadrants: Set<Quadrant>;
+  /** Actions in flight ("act:<id>", "refresh", "fullscreen"): their buttons stay disabled. */
+  busy: Set<string>;
   now: Date;
 }
 
@@ -53,6 +55,7 @@ export function emptyState(): ViewState {
     notices: new Map(),
     details: new Map(),
     expandedQuadrants: new Set(),
+    busy: new Set(),
     now: new Date(),
   };
 }
@@ -64,10 +67,11 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
   return node;
 }
 
-function button(label: string, className: string, onClick: () => void, disabled = false): HTMLButtonElement {
+function button(label: string, className: string, onClick: () => void, disabled = false, focusKey?: string): HTMLButtonElement {
   const b = el("button", className, label);
   b.type = "button";
   b.disabled = disabled;
+  if (focusKey) b.dataset.focusKey = focusKey;
   b.addEventListener("click", (ev) => {
     ev.stopPropagation();
     if (!b.disabled) onClick();
@@ -116,8 +120,10 @@ function renderHeader(s: ViewState, b: Board, h: Handlers): HTMLElement {
   title.append(el("h1", "title", "Priorities"), el("span", "as-of", `as of ${fmtTime(b.generated_at, b.timezone)}`));
   top.append(title);
   const actions = el("div", "header-actions");
-  actions.append(button("Refresh", "btn btn-ghost", h.refresh, s.superseded));
-  if (s.mode === "inline" && s.canFullscreen) actions.append(button("Open board", "btn btn-primary", h.openFullscreen));
+  actions.append(button("Refresh", "btn btn-ghost", h.refresh, s.superseded || s.busy.has("refresh"), "header:refresh"));
+  if (s.mode === "inline" && s.canFullscreen) {
+    actions.append(button("Open board", "btn btn-primary", h.openFullscreen, s.busy.has("fullscreen"), "header:fullscreen"));
+  }
   top.append(actions);
   header.append(top);
 
@@ -236,10 +242,10 @@ function renderCard(card: Card, s: ViewState, b: Board, h: Handlers): HTMLElemen
   if (notice) node.append(el("p", "card-notice", notice));
 
   const actions = el("div", "actions");
-  actions.append(button("Done", "btn", () => h.done(card.id), disabled));
-  actions.append(button("Act", "btn btn-primary", () => h.act(card.id), disabled));
+  actions.append(button("Done", "btn", () => h.done(card.id), disabled, `${card.id}:done`));
+  actions.append(button("Act", "btn btn-primary", () => h.act(card.id), disabled || s.busy.has(`act:${card.id}`), `${card.id}:act`));
   const open = s.details.has(card.id);
-  const toggle = button(open ? "Hide details" : "Details", "btn btn-ghost", () => h.toggleDetails(card.id), s.superseded);
+  const toggle = button(open ? "Hide details" : "Details", "btn btn-ghost", () => h.toggleDetails(card.id), s.superseded, `${card.id}:details`);
   toggle.setAttribute("aria-expanded", String(open));
   actions.append(toggle);
   node.append(actions);
@@ -282,6 +288,17 @@ function renderQuadrant(q: Quadrant, s: ViewState, b: Board, h: Handlers): HTMLE
 }
 
 export function render(root: HTMLElement, s: ViewState, h: Handlers): void {
+  // Every paint rebuilds the DOM; carry keyboard focus over to the matching control.
+  const active = root.ownerDocument.activeElement as HTMLElement | null;
+  const focusKey = active && root.contains(active) ? active.dataset.focusKey : undefined;
+  paintInto(root, s, h);
+  if (focusKey) {
+    const next = [...root.querySelectorAll<HTMLElement>("[data-focus-key]")].find((n) => n.dataset.focusKey === focusKey);
+    next?.focus();
+  }
+}
+
+function paintInto(root: HTMLElement, s: ViewState, h: Handlers): void {
   const app = el("div", `board mode-${s.mode}`);
   if (s.superseded) {
     app.classList.add("superseded");

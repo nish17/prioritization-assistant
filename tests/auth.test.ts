@@ -43,6 +43,11 @@ describe("path mode (default)", () => {
     expectBareNotFound(res, await res.text());
   });
 
+  it("returns a bare 404 for a malformed percent-encoded path", async () => {
+    const res = await post(`${srv.base}/mcp/%zz`, initializeBody());
+    expectBareNotFound(res, await res.text());
+  });
+
   it("returns 405 for GET and DELETE on the MCP route", async () => {
     for (const method of ["GET", "DELETE"]) {
       const res = await fetch(`${srv.base}/mcp/${SECRET}`, { method });
@@ -95,6 +100,8 @@ describe("header mode", () => {
   it.each([
     ["missing header", `/mcp`, {}],
     ["wrong header", `/mcp`, { "x-api-key": OTHER }],
+    ["short header", `/mcp`, { "x-api-key": "abc" }],
+    ["empty header", `/mcp`, { "x-api-key": "" }],
     ["path-mode credential", `/mcp/${SECRET}`, {}],
   ])("returns a bare 404 for %s", async (_label, path, headers) => {
     const res = await post(`${srv.base}${path}`, initializeBody(), headers as Record<string, string>);

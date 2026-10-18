@@ -142,10 +142,44 @@ describe("store (Unit 3)", () => {
     expect(r.task.delegated_to).toBe("Sana");
   });
 
+  it("keeps status_changed_at on a repeated status, so the reopen rule still sees newer asks", async () => {
+    await reset();
+    const t = await store().upsertTask(newTask("Send deck", [gmail("m1", "T")]));
+    await store().updateStatus({ task_id: t.task_id, status: "waiting_on_others" });
+    const before = (await db.pool.query("SELECT status_changed_at FROM tasks WHERE id = $1", [t.task_id])).rows[0].status_changed_at as Date;
+    clock.now = new Date(clock.now.getTime() + 3_600_000);
+    await store().updateStatus({ task_id: t.task_id, status: "waiting_on_others" });
+    const after = (await db.pool.query("SELECT status_changed_at FROM tasks WHERE id = $1", [t.task_id])).rows[0].status_changed_at as Date;
+    expect(after.toISOString()).toBe(before.toISOString());
+  });
+
+  it("marks a source stale after more than one weekday without a successful run", async () => {
+    await reset();
+    const s = store();
+    const userId = await s.userId();
+    await s.getSyncState();
+    await db.pool.query(
+      "UPDATE sync_state SET backfill_complete = true, last_success_at = $2 WHERE user_id = $1 AND source = 'gmail'",
+      [userId, new Date("2026-10-16T17:00:00+05:30")],
+    );
+    clock.now = new Date("2026-10-19T09:00:00+05:30"); // Friday evening → Monday morning: 1 weekday
+    expect((await s.getSyncState()).sources[0]!.stale).toBe(false);
+    clock.now = new Date("2026-10-20T09:00:00+05:30"); // → Tuesday: 2 weekdays
+    expect((await s.getSyncState()).sources[0]!.stale).toBe(true);
+  });
+
   it("requires a future snooze_until", async () => {
     await reset();
     const t = await store().upsertTask(newTask("Send deck", [gmail("m1", "T")]));
     await expect(store().updateStatus({ task_id: t.task_id, status: "snoozed" })).rejects.toThrow(/snooze_until/);
+  });
+
+  it("warns about relationships that aren't known terms", async () => {
+    await reset();
+    const saved = await store().updateSettings({ people: [{ name: "Kim", relationship: "board advisor" }, { name: "Lee", relationship: "client" }] });
+    expect(saved.warnings).toHaveLength(1);
+    expect(saved.warnings[0]).toContain("Kim");
+    expect(saved.people[0]!.tier).toBe("external_counterparty");
   });
 
   it("round-trips settings exactly", async () => {

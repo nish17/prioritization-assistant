@@ -208,6 +208,8 @@ export interface FinishRunResult {
   backfill_complete: boolean;
   slices_done: number;
   estimated_total_slices: number;
+  /** Refresh only: false while catching up in chunks after a capped refresh; run the source's refresh again. */
+  caught_up?: boolean;
   message: string;
 }
 
@@ -269,6 +271,7 @@ export async function finishRun(
   const set: Partial<SyncRow> = { last_success_at: now, last_status: "ok", last_error: null };
   let advanced = false;
   let counted = false;
+  let caughtUp: boolean | undefined;
   let message: string;
 
   if (run.source === "gcal") {
@@ -297,14 +300,15 @@ export async function finishRun(
     }
   } else if (canHalve) {
     set.refresh_window_hours = halved;
-    message = `refresh capped; the next refresh catches up in ${halved}-hour chunks`;
+    caughtUp = false;
+    message = `refresh capped; run this source's refresh again to catch up in ${halved}-hour chunks`;
   } else {
     const cursor = Math.max(ms(run.window_to), s.refresh_cursor ? ms(s.refresh_cursor) : 0);
     set.refresh_cursor = at(cursor);
     advanced = true;
-    const caughtUp = cursor >= ms(now) - REFRESH_OVERLAP_MS;
+    caughtUp = cursor >= ms(now) - REFRESH_OVERLAP_MS;
     if (caughtUp) set.refresh_window_hours = null;
-    message = caughtUp ? "refresh window recorded" : "caught up to the end of this chunk; run refresh again to continue";
+    message = caughtUp ? "refresh window recorded" : "end of this chunk; run this source's refresh again to continue";
   }
 
   const cols = Object.keys(set);
@@ -320,6 +324,7 @@ export async function finishRun(
       backfill_complete: after.backfill_complete,
       slices_done: after.slices_done,
       estimated_total_slices: estimateTotalSlices(after, cfg),
+      ...(run.mode === "refresh" && run.source !== "gcal" ? { caught_up: caughtUp ?? true } : {}),
     },
     message,
   );
@@ -380,7 +385,7 @@ export interface SourceProgress {
 }
 
 /** Per-source progress plus the thread keys of open Gmail and Slack tasks (for the resolution pass). */
-export async function syncStateView(db: Pool | Client, userId: string, now: Date, cfg: WindowConfig) {
+export async function syncStateView(db: Pool | Client, userId: string, now: Date, cfg: WindowConfig, opts: { threadKeys?: boolean } = {}) {
   await ensureSyncRows(db, userId);
   const { rows } = await db.query<SyncRow>(`SELECT ${SYNC_COLUMNS} FROM sync_state WHERE user_id = $1`, [userId]);
   const bySource = new Map(rows.map((r) => [r.source, r]));
@@ -400,6 +405,8 @@ export async function syncStateView(db: Pool | Client, userId: string, now: Date
       stale: s.backfill_complete && (!s.last_success_at || businessDaysSince(s.last_success_at, now, cfg.timezone) > 1),
     };
   });
+  const open_thread_keys: Record<"gmail" | "slack", string[]> = { gmail: [], slack: [] };
+  if (opts.threadKeys === false) return { backfill_days: cfg.backfillDays, slice_days: cfg.sliceDays, sources, open_thread_keys };
   const keys = await db.query<{ source: Source; thread_key: string }>(
     `SELECT source, thread_key FROM (
        SELECT ts.source, ts.thread_key, max(t.last_activity_at) AS last,
@@ -410,7 +417,6 @@ export async function syncStateView(db: Pool | Client, userId: string, now: Date
      ) k WHERE rn <= $2 ORDER BY source, last DESC`,
     [userId, OPEN_THREAD_KEY_CAP],
   );
-  const open_thread_keys: Record<"gmail" | "slack", string[]> = { gmail: [], slack: [] };
   for (const k of keys.rows) open_thread_keys[k.source as "gmail" | "slack"].push(k.thread_key);
   return {
     backfill_days: cfg.backfillDays,

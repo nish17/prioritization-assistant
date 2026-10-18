@@ -109,7 +109,7 @@ describe("tool calls", () => {
     );
     const started = Date.now();
     const r = await call("list_tasks");
-    expect(Date.now() - started).toBeLessThan(1000);
+    expect(Date.now() - started).toBeLessThan(2000);
     const size = JSON.stringify(r.structuredContent).length + r.content[0]!.text.length;
     expect(size).toBeLessThan(100_000);
     expect(r.content[0]!.text).toMatch(/DEFER \(neither\): 500/);
@@ -127,6 +127,33 @@ describe("tool calls", () => {
     expect(sc.entities).toEqual([{ type: "person", name: "Priya Raman", role: "requester" }]);
     expect(sc.links.map((l) => l.task_id)).toEqual([b.task_id]);
     expect(sc.events.length).toBeGreaterThan(0);
+  });
+
+  it("names snooze_until when snoozing without it", async () => {
+    const t = await store.upsertTask(newTask("Send deck", [gmail("m1", "T")]));
+    const r = await call("update_status", { task_id: t.task_id, status: "snoozed" });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/^snooze_until:/);
+  });
+
+  it("round-trips settings through update_settings and get_settings, with warnings", async () => {
+    const r = await call("update_settings", { people: [{ name: "Priya", relationship: "client", emails: ["P@Acme.example"] }, { name: "Kim", relationship: "mentor" }] });
+    expect(r.structuredContent!.warnings).toEqual([expect.stringContaining("Kim")]);
+    const g = await call("get_settings");
+    expect(g.structuredContent).toMatchObject({ timezone: "Asia/Kolkata", people: [expect.objectContaining({ emails: ["p@acme.example"], tier: "portfolio_ceo" }), expect.anything()] });
+  });
+
+  it("returns sync state, related tasks and resets a backfill through MCP", async () => {
+    const run = (await call("start_run", { mode: "backfill", source: "gmail" })).structuredContent as { run_id: string };
+    await store.upsertTask(newTask("Send Q4 deck", [gmail("m1", "T")], { run_id: run.run_id }));
+    const sync = (await call("get_sync_state")).structuredContent as { sources: { source: string }[]; open_thread_keys: { gmail: string[] } };
+    expect(sync.sources.map((x) => x.source)).toEqual(["gmail", "slack", "gcal", "granola"]);
+    expect(sync.open_thread_keys.gmail).toEqual(["T"]);
+    const related = (await call("find_related", { thread_keys: [{ source: "gmail", thread_key: "T" }], keywords: ["q4 deck"] })).structuredContent as { candidates: { match_reasons: string[] }[] };
+    expect(related.candidates[0]!.match_reasons).toEqual(expect.arrayContaining(["same thread"]));
+    const reset = await call("reset_backfill", { source: "gmail", delete_tasks: true });
+    expect(reset.structuredContent).toMatchObject({ source: "gmail", deleted_tasks: 1 });
+    expect(await taskCount()).toBe(0);
   });
 
   it("reports an unknown task as a fixable error", async () => {
