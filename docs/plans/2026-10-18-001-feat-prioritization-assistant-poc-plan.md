@@ -561,7 +561,7 @@ R4 and the stretch card actions are already outside the build (Unit 8).
 
 ### Phase 2: Core (Sun 17:00–23:45)
 
-- [ ] **Unit 1: Schema, migrations, database access**
+- [x] **Unit 1: Schema, migrations, database access**
 
 **Goal:** Postgres schema for the POC.
 
@@ -604,7 +604,7 @@ R4 and the stretch card actions are already outside the build (Unit 8).
 - Migrations apply on Railway and on the Docker test database.
 - After the first Railway migration, the public TCP proxy is removed.
 
-- [ ] **Unit 2: Scoring engine (pure)**
+- [x] **Unit 2: Scoring engine (pure)**
 
 **Goal:** Deterministic urgency, importance, quadrant, effective status and ordering, all as pure functions.
 
@@ -642,7 +642,7 @@ R4 and the stretch card actions are already outside the build (Unit 8).
 **Verification:**
 - All scoring tests pass, and the worked example matches the origin's corrected section 22.2.
 
-- [ ] **Unit 3: Task store, dedupe guard, run windows, settings**
+- [x] **Unit 3: Task store, dedupe guard, run windows, settings**
 
 **Goal:** Persistence and every write-side rule: related-task lookup, item keys and the two-step guard, reopen, update rules, VIP tiers, sanitization, run windows and cursors, reset, follow-up dates, outcome rows.
 
@@ -702,7 +702,7 @@ R4 and the stretch card actions are already outside the build (Unit 8).
 **Verification:**
 - All dedupe, windows and store tests pass against Docker Postgres with `pg_trgm`.
 
-- [ ] **Unit 4: MCP tools and server hardening**
+- [x] **Unit 4: MCP tools and server hardening**
 
 **Goal:** Expose the domain through 11 MCP tools with safe schemas, explicit annotations, validation and text fallback.
 
@@ -825,7 +825,7 @@ R4 and the stretch card actions are already outside the build (Unit 8).
 
 ### Phase 4: Board (Mon 08:00–10:30)
 
-- [ ] **Unit 5: Matrix board MCP App**
+- [x] **Unit 5: Matrix board MCP App**
 
 **Goal:** The interactive 2x2 board inside Claude. The floor (grid, Done, Act) ships first, then the polish layers in order.
 

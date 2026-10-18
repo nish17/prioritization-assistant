@@ -50,7 +50,7 @@ One slice of one source per chat.
 Read-only: never draft or send.
 
 1. `get_sync_state`. Keep `open_thread_keys` for the resolution pass.
-2. For each source whose connector is available, in the order gmail, slack, granola, gcal:
+2. For each source whose connector is available (only the sources the user named, if they named any), in the order gmail, slack, granola, gcal:
    1. `start_run(mode: "refresh", source)`. If it returns `backfill_incomplete`, skip the source and mention it in the summary.
    2. Query with the `query_hints`, process items with the per-item procedure, then `finish_run`.
    3. **Resolution pass** (gmail and slack only): run one search for the user's own messages since the window start (`own_replies_since_window_start` hint). Keep only results whose thread is in `open_thread_keys` for that source. For each match, read the thread. If the user's own reply clearly resolves the task, look up the task with `find_related(thread_keys: [...])`, call `upsert_task(decision: "update", task_id, sources: [the reply with role "resolution"])`, then `update_status(task_id, "done", note: "Resolved by your reply on <date>")`. If it is unclear, list it as **possibly resolved** in the summary and change nothing.
@@ -69,6 +69,7 @@ Read-only: never draft or send.
 ### review ("why is this in Do?", "explain task <id>", "show my board")
 
 - "show my board": call `list_tasks`.
+- "check my known open items": `get_settings` for `known_open_items`, then `find_related` (keywords from each item) and say which are on the board, which are done, and which are missing.
 - To explain a task: `get_task`, then explain the quadrant from `rules_fired` (urgency points, importance points), the reasons and the sources, in plain words. Urgent means 3+ urgency points; important means 4+ importance points. If the user disagrees, offer to correct the signals with `upsert_task(decision: "update", ...)` using a source they point to, or to mark it done.
 
 ## Per-item procedure (backfill and refresh)
