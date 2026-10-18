@@ -8,5 +8,6 @@ export default defineConfig({
     testTimeout: 20000,
     hookTimeout: 60000,
     fileParallelism: false,
+    globalSetup: ["tests/helpers/globalSetup.ts"],
   },
 });
