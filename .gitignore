@@ -6,3 +6,4 @@ dist/
 *.zip
 .claude/settings.local.json
 .DS_Store
+.context/
