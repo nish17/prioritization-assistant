@@ -13,6 +13,18 @@ export const REQUESTER_TIERS = [
 ] as const;
 export type RequesterTier = (typeof REQUESTER_TIERS)[number];
 
+// Shown in explanations instead of tier names (R11: tier names stay internal).
+export const TIER_LABELS: Record<RequesterTier, string> = {
+  lp: "investor",
+  principal: "co-founder, partner or prospect",
+  portfolio_ceo: "client",
+  portfolio_exec: "client executive",
+  internal_team: "team",
+  external_counterparty: "external contact",
+  vendor: "vendor",
+  unknown: "unknown sender",
+};
+
 export const RISK_FLAGS = ["deal_risk", "kpi_risk", "legal", "financial", "board", "people"] as const;
 export type RiskFlag = (typeof RISK_FLAGS)[number];
 

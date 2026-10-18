@@ -1,4 +1,4 @@
-import { DEFAULT_SCORING, type RequesterTier, type ScoringConfig } from "./scoringConfig.js";
+import { DEFAULT_SCORING, TIER_LABELS, type RequesterTier, type ScoringConfig } from "./scoringConfig.js";
 
 export const QUADRANTS = ["do", "schedule", "delegate", "defer"] as const;
 export type Quadrant = (typeof QUADRANTS)[number];
@@ -21,6 +21,8 @@ export interface ScoringInput {
   waiting_on_user: boolean;
   ask_received_at: Date | null;
   requester_tier: RequesterTier | null;
+  /** The user's own term for the requester (client, co-founder); used only in explanations. */
+  requester_label?: string | null;
   risk_flags: readonly string[];
   urgency_language: boolean;
   delegable: boolean;
@@ -94,7 +96,10 @@ export function scoreTask(t: ScoringInput, now: Date, cfg: ScoringConfig = DEFAU
   if (t.urgency_language) add("urgency", "urgency_language", "Urgent language", u.urgencyLanguage);
 
   const imp = cfg.importance;
-  if (t.requester_tier) add("importance", `tier_${t.requester_tier}`, `Requester: ${t.requester_tier}`, imp.tiers[t.requester_tier] ?? 0);
+  if (t.requester_tier) {
+    const who = t.requester_label || TIER_LABELS[t.requester_tier];
+    add("importance", `tier_${t.requester_tier}`, `Requester: ${who}`, imp.tiers[t.requester_tier] ?? 0);
+  }
   for (const group of imp.flagGroups) {
     if (group.flags.some((f) => t.risk_flags.includes(f))) add("importance", `flag_${group.flags.join("_")}`, group.label, group.points);
   }

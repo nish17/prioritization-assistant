@@ -192,6 +192,13 @@ describe("quadrant, status and hints", () => {
     expect(s.rules_fired.every((r) => r.label.length > 0)).toBe(true);
   });
 
+  it("explains the requester in the user's terms, never the tier name", () => {
+    const labelled = scoreTask(base({ requester_tier: "principal", requester_label: "co-founder" }), now);
+    expect(labelled.rules_fired.find((r) => r.axis === "importance")!.label).toBe("Requester: co-founder");
+    const unlabelled = scoreTask(base({ requester_tier: "portfolio_ceo" }), now);
+    expect(unlabelled.rules_fired[0]!.label).toBe("Requester: client");
+  });
+
   it("carries the config's rules_version", () => {
     expect(scoreTask(base(), now).rules_version).toBe(DEFAULT_SCORING.rules_version);
   });

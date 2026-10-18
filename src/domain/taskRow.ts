@@ -50,6 +50,7 @@ export function toScoringInput(t: TaskRow): ScoringInput {
     waiting_on_user: t.waiting_on_user,
     ask_received_at: t.ask_received_at,
     requester_tier: t.requester_tier,
+    requester_label: t.requester_label,
     risk_flags: t.risk_flags,
     urgency_language: t.urgency_language,
     delegable: t.delegable,
