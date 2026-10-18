@@ -268,6 +268,22 @@ describe("validation and updates", () => {
     expect(await q("SELECT 1 FROM task_sources")).toHaveLength(0);
   });
 
+  it("refuses to attach an item that is already another open task's origin", async () => {
+    await store.upsertTask(newTask("Send deck", [gmail("m1", "T1")]));
+    const other = await store.upsertTask(newTask("Book venue", [gmail("m2", "T2")]));
+    await expect(store.upsertTask(updateTask(other.task_id, [gmail("m1", "T1", { role: "update" })]))).rejects.toThrow(/^task_id: this item is already on open task/);
+  });
+
+  it("ignores a run_id from a finished run, so reset never deletes what it wrote", async () => {
+    const r = await run();
+    await store.finishRun(r, "ok", { fetched: 0, evaluated: 0, not_a_task: 0 });
+    const late = await store.upsertTask(newTask("Late write", [gmail("m1", "T")], { run_id: r }));
+    const row = (await q<{ run_id: string | null }>("SELECT run_id FROM task_sources WHERE task_id = $1", [late.task_id]))[0]!;
+    expect(row.run_id).toBeNull();
+    await store.resetBackfill("gmail", true);
+    expect(await taskCount()).toBe(1);
+  });
+
   it("attaches evidence only when updating a done task", async () => {
     const x = await store.upsertTask(newTask("Send deck", [gmail("m1", "T")]));
     await store.updateStatus({ task_id: x.task_id, status: "done" });

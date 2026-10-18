@@ -134,7 +134,7 @@ export class Store {
       effective_status: s.effective_status,
       urgency: s.urgency,
       importance: s.importance,
-      rules_fired: s.rules_fired.map((r) => `${r.label} (+${r.points})`),
+      rules_fired: s.rules_fired.map(({ axis, label, points }) => ({ axis, label, points })),
       rules_version: s.rules_version,
     };
   }

@@ -362,10 +362,15 @@ async function attachAsEvidence(c: Client, taskId: string, sources: PreparedSour
 export async function upsertTask(c: Client, input: UpsertTaskInput, ctx: UpsertContext): Promise<UpsertResult> {
   const { primary, others } = prepareSources(input);
   const f = prepareFields(input, ctx);
-  const runId = input.run_id ?? null;
+  let runId = input.run_id ?? null;
   if (runId) {
-    const ok = await c.query("SELECT 1 FROM ingest_runs WHERE id = $1 AND user_id = $2", [runId, ctx.userId]);
-    if (!ok.rowCount) throw new ValidationError("run_id", "unknown run");
+    const run = (
+      await c.query<{ source: Source; status: string }>("SELECT source, status FROM ingest_runs WHERE id = $1 AND user_id = $2", [runId, ctx.userId])
+    ).rows[0];
+    if (!run) throw new ValidationError("run_id", "unknown run");
+    // Only an open run of the item's own source owns what it writes; anything else (a finished run reused later,
+    // another source's run) is treated as no run, so reset_backfill never deletes or misses rows because of it.
+    if (run.status !== "running" || (primary && primary.source !== run.source)) runId = null;
   }
 
   if (input.decision === "update") {
@@ -384,6 +389,20 @@ export async function upsertTask(c: Client, input: UpsertTaskInput, ctx: UpsertC
       await resolveEntities(c, ctx.userId, task.id, input);
       await recordOutcome(c, ctx, runId, keySource, "evidence", task.id);
       return { task_id: task.id, outcome: "evidence", status: task.status };
+    }
+    const elsewhere = (
+      await c.query<{ task_id: string; title: string }>(
+        `SELECT ts.task_id, t.title FROM task_sources ts JOIN tasks t ON t.id = ts.task_id
+         WHERE t.user_id = $1 AND ts.source = $2 AND ts.item_key = $3 AND ts.role IN ('origin','update')
+           AND ts.task_id <> $4 AND t.status <> 'done' LIMIT 1`,
+        [ctx.userId, primary.source, primary.item_key, task.id],
+      )
+    ).rows[0];
+    if (elsewhere) {
+      throw new ValidationError(
+        "task_id",
+        `this item is already on open task ${elsewhere.task_id} ("${elsewhere.title}"); update that task, or attach the item as evidence`,
+      );
     }
     const { reopened } = await applyToTask(c, ctx, input, task, f, primary, others, runId, false);
     const outcome: Outcome = reopened ? "reopened" : "updated";

@@ -73,7 +73,7 @@ describe("tool calls", () => {
     const first = await call("upsert_task", newTask("Send Q4 deck", [gmail("m1", "T")]) as unknown as Record<string, unknown>);
     expect(first.isError).toBeFalsy();
     expect(first.structuredContent).toMatchObject({ outcome: "created", quadrant: expect.any(String), rules_version: "2" });
-    expect(first.structuredContent!.rules_fired).toEqual(expect.arrayContaining([expect.stringContaining("Waiting on you")]));
+    expect(first.structuredContent!.rules_fired).toEqual(expect.arrayContaining([{ axis: "urgency", label: "Waiting on you", points: 1 }]));
     expect(JSON.parse(first.content[0]!.text).task_id).toBe(first.structuredContent!.task_id);
     const second = await call("upsert_task", newTask("Add budget slide", [gmail("m2", "T", { occurred_at: "2026-10-17T12:00:00Z" })]) as unknown as Record<string, unknown>);
     expect(second.structuredContent).toMatchObject({ outcome: "converted", matched_title: "Send Q4 deck", task_id: first.structuredContent!.task_id });
