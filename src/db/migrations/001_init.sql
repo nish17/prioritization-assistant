@@ -27,7 +27,8 @@ CREATE TABLE sync_state (
   backfill_anchor      timestamptz,          -- "now" at the first backfill run; slices step back from here
   backfill_next_to     timestamptz,          -- upper bound of the next backfill slice
   slices_done          integer NOT NULL DEFAULT 0,
-  current_slice_hours  integer,              -- halves when a slice is capped
+  current_slice_hours  integer,              -- halves when a backfill slice is capped
+  refresh_window_hours integer,              -- set when a refresh is capped: catch up oldest-first in chunks
   backfill_complete    boolean NOT NULL DEFAULT false,
   last_run_at          timestamptz,
   last_success_at      timestamptz,

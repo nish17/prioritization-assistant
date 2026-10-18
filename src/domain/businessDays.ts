@@ -44,3 +44,29 @@ export function businessDaysSince(from: Date, now: Date, tz: string): number {
   }
   return count;
 }
+
+function tzOffsetMs(d: Date, tz: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(d);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  const asUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+  return asUtc - Math.floor(d.getTime() / 1000) * 1000;
+}
+
+/** A wall-clock time on a YYYY-MM-DD date in tz, as an instant. */
+export function zonedDateTime(date: string, hour: number, tz: string): Date {
+  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
+  const guess = Date.UTC(y, m - 1, d, hour, 0, 0);
+  let t = guess - tzOffsetMs(new Date(guess), tz);
+  const second = tzOffsetMs(new Date(t), tz);
+  t = guess - second;
+  return new Date(t);
+}
