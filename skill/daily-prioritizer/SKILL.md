@@ -1,6 +1,6 @@
 ---
 name: daily-prioritizer
-description: Builds and maintains the user's Eisenhower task board from Gmail, Slack, Google Calendar and Granola using the Prioritizer connector tools (get_sync_state, start_run, upsert_task, list_tasks and others). Use when the user says "set up my board", "continue backfill", "refresh my board", "show my board", "why is this in Do?", asks to act on a task, or sends "Draft a reply for task <id>" from the board.
+description: Builds and maintains the user's Eisenhower task board from Gmail, Slack, Google Calendar and Granola using the Prioritizer connector tools (get_sync_state, start_run, upsert_task, list_tasks and others). Use when the user says "set up my board", "continue backfill", "refresh my board", "show my board", "why is this in Do?", asks to act on a task, or sends "Draft a reply for task" followed by a task ID from the board.
 ---
 
 # Daily prioritizer

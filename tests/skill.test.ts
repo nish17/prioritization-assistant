@@ -15,6 +15,10 @@ describe("skill package", () => {
     expect(field("description").length).toBeLessThanOrEqual(1024);
   });
 
+  it("keeps angle brackets out of the frontmatter, which claude.ai rejects as XML tags", () => {
+    expect(front).not.toMatch(/[<>]/);
+  });
+
   it("references only files that exist, and every reference file is referenced", () => {
     const refs = [...skill.matchAll(/`(references\/[a-z-]+\.md)`/g)].map((m) => m[1]!);
     for (const r of refs) expect(existsSync(join(dir, r)), r).toBe(true);
@@ -29,6 +33,6 @@ describe("skill package", () => {
   });
 
   it("keeps the board's Act template as a trigger", () => {
-    expect(field("description")).toContain("Draft a reply for task <id>");
+    expect(field("description")).toContain("Draft a reply for task");
   });
 });

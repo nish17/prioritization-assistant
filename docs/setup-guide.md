@@ -82,14 +82,27 @@ Deploy from the clean snapshot worktree, never from a working directory with unc
 ```bash
 git -C ../prioritization-assistant-deploy checkout --detach feat/prioritization-assistant-poc
 cd ../prioritization-assistant-deploy
-railway up        # project "prioritizer", service "prioritizer", Postgres attached
+R=~/.railway/bin/railway   # or plain `railway` if it's on PATH
+$R up                      # creates project + service, both named after the directory
+$R add --database postgres
+$R variables \
+  --set "MCP_SECRET=$(npm run -s secret)" \
+  --set 'DATABASE_URL=${{Postgres.DATABASE_URL}}' \
+  --set AUTH_MODE=path \
+  --set POC_USER_EMAIL=you@example.com --set 'POC_USER_NAME=Your Name' \
+  --set USER_TIMEZONE=Asia/Kolkata \
+  --set BACKFILL_DAYS=2 --set SLICE_DAYS=1
 ```
 
-Service variables (Railway → service → Variables):
+**Railway never reads `.env`.** The file is gitignored, so `railway up` doesn't upload it, and the server doesn't load it anyway. Every variable has to be set on the service. Until it is, each deploy crashes at startup with `MCP_SECRET must be 64 hex characters`. Setting variables triggers a redeploy, which picks them up.
+
+`$R variables` writes to the linked service. Run `$R status` first: it must show the app service, not Postgres. If it shows Postgres, add `--service <app service name>` to the command.
+
+Keep the single quotes around `${{Postgres.DATABASE_URL}}`, so the shell passes it through and Railway resolves it to the **private** URL. Don't print or share the output of `$R variables` afterwards: it shows the secret.
 
 | Variable | Value |
 | --- | --- |
-| `MCP_SECRET` | `openssl rand -hex 32` (64 hex characters) |
+| `MCP_SECRET` | `npm run -s secret` (64 hex characters) |
 | `AUTH_MODE` | `path` |
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (the **private** URL) |
 | `POC_USER_EMAIL` / `POC_USER_NAME` | the user's email and name |
@@ -123,7 +136,12 @@ The POC user is re-created on the next request.
 1. Delete any scheduled task on Nimesh's Claude.
 2. Remove the Prioritizer connector from Nimesh's Claude.
 3. `npm run wipe` (above), and check that every count is 0.
-4. Set `BACKFILL_DAYS=30`, `SLICE_DAYS=7` and `POC_USER_EMAIL` to Jeevan's, set a **new** `MCP_SECRET`, and redeploy.
+4. Set the variables for Jeevan with a **new** secret. This triggers the redeploy:
+   ```bash
+   $R variables --set "MCP_SECRET=$(npm run -s secret)" \
+     --set BACKFILL_DAYS=30 --set SLICE_DAYS=7 \
+     --set POC_USER_EMAIL=<jeevan's email> --set 'POC_USER_NAME=Jeevan'
+   ```
 5. Share the new connector URL by password-manager share or by reading it out on a call. **Never by Gmail or Slack.**
 
 ### After the demo, in this order
@@ -131,7 +149,7 @@ The POC user is re-created on the next request.
 1. Jeevan deletes the scheduled task, if he made one.
 2. Jeevan removes the Prioritizer connector.
 3. `npm run wipe`, and check that every count is 0.
-4. Rotate `MCP_SECRET` and redeploy, so the old URL is dead.
+4. Rotate the secret with `$R variables --set "MCP_SECRET=$(npm run -s secret)"`, which redeploys, so the old URL is dead.
 5. Verify: the old URL returns 404, and the wipe counts are 0.
 
 If the POC isn't continuing, delete the Railway Postgres service so its backups go too. On any suspected leak of the URL, rotate immediately: new secret, redeploy, re-add the connector.
@@ -140,6 +158,7 @@ If the POC isn't continuing, delete the Railway Postgres service so its backups 
 
 | Symptom | Check |
 | --- | --- |
+| Deploy crashes with `MCP_SECRET must be 64 hex characters`, or no variables seem set | The variables are only in the local `.env`, or they went to the Postgres service. Set them on the app service with `$R variables --set …` (Deploy, above), then check them with `$R variables --service <app service name>`. Don't share that output: it shows the secret. |
 | Connector won't add, or Claude starts a sign-in flow | URL must be `https://`, with no redirect, and exactly `/mcp/<secret>`. Auth must be "No sign-in". |
 | Tools listed but never called on the web | Bug #476: use desktop or Cowork. |
 | Board doesn't render, text only | The text summary is the fallback. Check `npm run build:board` ran in the deploy. Ask "show my board" again. |
